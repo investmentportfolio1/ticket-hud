@@ -60,6 +60,7 @@
       #askOut { margin-top: 12px; }
       .answer-head { font-size: 13px; color: var(--dim); margin: 0 0 4px; }
       .answer-body { margin: 0; font-variant-numeric: tabular-nums; }
+      #askOut hr { border: 0; border-top: 1px solid rgba(255,255,255,0.08); margin: 10px 0; }
       .err-text { color: var(--down); font-size: 14px; margin: 0; }
       .controls { color: var(--dim); font-size: 13px; margin: 0; padding-left: 18px; }
     </style>
@@ -122,10 +123,10 @@
       <section class="card">
         <label for="askInput">Try a question</label>
         <div class="row">
-          <input id="askInput" type="text" autocomplete="off" placeholder="Apple on March 3 at 2 PM" />
+          <input id="askInput" type="text" autocomplete="off" placeholder="Tesla earnings, market news…" />
           <button id="askButton" class="ghost" type="button">Ask</button>
         </div>
-        <p class="hint">Same as asking out loud on the glasses. Past dates need a paid Finnhub plan.</p>
+        <p class="hint">Same as asking out loud on the glasses: prices (now or on a date), "market news", "Apple news", "Tesla earnings", "earnings this week", "what did the Fed do", "how is the market". Past dates need a paid Finnhub plan.</p>
         <div id="askOut"></div>
       </section>
 

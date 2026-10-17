@@ -13,6 +13,19 @@
 // what you want (price / open / close / high / low), then asks Finnhub.
 
 import { FinnhubError, fetchCandles, fetchQuote, searchSymbol } from './finnhub'
+import {
+  TOPIC_WORDS,
+  companyEarnings,
+  companyNews,
+  detectTopic,
+  earningsCalendar,
+  fedNews,
+  marketNews,
+  marketOverview,
+  type Answer,
+} from './news'
+
+export type { Answer }
 
 export type Metric = 'price' | 'open' | 'close' | 'high' | 'low'
 
@@ -24,10 +37,6 @@ export interface ParsedQuestion {
   metric: Metric
 }
 
-export interface Answer {
-  header: string
-  body: string
-}
 
 // ------------------------------------------------------------------ names
 
@@ -63,7 +72,8 @@ const STOP = new Set(
     'january february march april may june july august september october november december ' +
     'jan feb mar apr jun jul aug sep sept oct nov dec ' +
     'monday tuesday wednesday thursday friday saturday sunday hey okay ok um uh so like ' +
-    'i my me you good best buy sell should would could can market up down weeks'
+    'i my me you good best buy sell should would could can market up down weeks ' +
+    TOPIC_WORDS
   ).split(/\s+/),
 )
 
@@ -300,7 +310,7 @@ export function zoneLabel(zone: string): string {
 }
 
 const HELP =
-  "Try: \"Apple price\"\n\"Nvidia on March 3 at 2 PM\"\n\"Tesla close yesterday\""
+  'Try: "Apple price", "Nvidia on March 3 at 2 PM",\n"market news", "Tesla earnings", "what did the Fed do",\n"how is the market", "earnings this week"'
 
 export async function answerQuestion(
   text: string,
@@ -308,6 +318,11 @@ export async function answerQuestion(
 ): Promise<Answer> {
   const now = opts.now ?? Date.now()
   const q = parseQuestion(text, opts)
+  const topic = detectTopic(text)
+
+  // Questions that don't need a specific stock.
+  if (topic === 'fed') return fedNews(opts.apiKey, now)
+  if (topic === 'market' && !q.symbol) return marketOverview(opts.apiKey, now)
 
   let symbol = q.symbol
   let name = ''
@@ -324,8 +339,15 @@ export async function answerQuestion(
       name = hit.name
     }
   }
+  if (topic === 'news') return symbol ? companyNews(symbol, opts.apiKey, now) : marketNews(opts.apiKey, now)
+  if (topic === 'earnings') {
+    return symbol
+      ? companyEarnings(symbol, opts.apiKey, now)
+      : earningsCalendar(text, opts.watchlist, opts.apiKey, now)
+  }
+
   if (!symbol) {
-    return { header: 'NOT SURE WHICH STOCK', body: `I heard: "${text}"\n\n${HELP}` }
+    return { header: 'NOT SURE WHAT TO LOOK UP', body: `I heard: "${text}"\n\n${HELP}` }
   }
 
   // ---- live quote (no date, or today without a time and not asking for a close)

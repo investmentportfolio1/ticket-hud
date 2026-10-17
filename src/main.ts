@@ -214,7 +214,10 @@ async function askTyped() {
   askOut.innerHTML = '<p class="empty">Looking up…</p>'
   try {
     const a = await answerQuestion(q, { apiKey: settings.apiKey, watchlist: parseSymbols(settings.tickers), zone: settings.zone })
-    askOut.innerHTML = `<p class="answer-head">${escapeHtml(a.header)}</p><p class="answer-body">${escapeHtml(a.body).replace(/\n/g, '<br>')}</p>`
+    const pages = [a.body, ...(a.more ?? [])]
+    askOut.innerHTML =
+      `<p class="answer-head">${escapeHtml(a.header.replace(/ {2}· swipe for (more|headlines)/, ''))}</p>` +
+      pages.map(p => `<p class="answer-body">${escapeHtml(p).replace(/\n/g, '<br>')}</p>`).join('<hr>')
   } catch (err) {
     askOut.innerHTML = `<p class="err-text">${escapeHtml(errorText(err))}</p>`
   } finally {
@@ -299,10 +302,32 @@ async function refresh(): Promise<void> {
 
 // ---------------------------------------------------------------- voice questions
 
-const EXAMPLES = 'e.g. "Apple price"\n"Nvidia on March 3 at 2 PM"\n"Tesla close yesterday"'
+const EXAMPLES = 'e.g. "Apple price"  "Nvidia on March 3 at 2 PM"\n"market news"  "Tesla earnings"\n"what did the Fed do"  "how is the market"'
 const MAX_LISTEN_MS = 15_000
 
 let voice: VoiceSession | null = null
+let answerHeader = ''
+let answerPages: string[] = []
+let answerPage = 0
+
+function showAnswerPage() {
+  const total = answerPages.length
+  const hint = total > 1
+    ? `\n\n${answerPage + 1}/${total} · swipe for more · tap to ask`
+    : '\n\nTap: ask again · Swipe: watchlist'
+  void view?.showMessage(answerPages[answerPage] + hint, answerHeader)
+}
+
+/** Swipe on an answer: move between its screens, and past either end back to the watchlist. */
+function swipeAnswer(step: 1 | -1) {
+  const next = answerPage + step
+  if (next < 0 || next >= answerPages.length) {
+    backToWatchlist()
+    return
+  }
+  answerPage = next
+  showAnswerPage()
+}
 let listenTimer: ReturnType<typeof setTimeout> | null = null
 let lastHeard = ''
 let heardDrawTimer: ReturnType<typeof setTimeout> | null = null
@@ -397,7 +422,10 @@ async function stopListeningAndAnswer(problem?: string) {
       zone: settings.zone,
     })
     mode = 'answer'
-    await view?.showMessage(`${a.body}\n\nTap: ask again · Swipe: watchlist`, a.header)
+    answerHeader = a.header
+    answerPages = [a.body, ...(a.more ?? [])]
+    answerPage = 0
+    showAnswerPage()
   } catch (err) {
     mode = 'answer'
     await view?.showMessage(`${errorText(err)}\n\nTap to try again.`, 'ASK A QUESTION')
@@ -452,7 +480,7 @@ function attachInput(b: EvenAppBridge) {
 
     if (txt === OsEventTypeList.SCROLL_BOTTOM_EVENT || txt === OsEventTypeList.SCROLL_TOP_EVENT) {
       if (mode === 'answer') {
-        backToWatchlist()
+        swipeAnswer(txt === OsEventTypeList.SCROLL_BOTTOM_EVENT ? 1 : -1)
         return
       }
       if (mode !== 'watchlist') return

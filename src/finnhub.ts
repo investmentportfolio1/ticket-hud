@@ -36,7 +36,7 @@ export class FinnhubError extends Error {
   }
 }
 
-async function get(path: string, params: Record<string, string>, apiKey: string): Promise<any> {
+export async function getJson(path: string, params: Record<string, string>, apiKey: string): Promise<any> {
   const qs = new URLSearchParams({ ...params, token: apiKey })
   let res: Response
   try {
@@ -54,7 +54,7 @@ async function get(path: string, params: Record<string, string>, apiKey: string)
 }
 
 export async function fetchQuote(symbol: string, apiKey: string): Promise<QuoteResult> {
-  const d = await get('/quote', { symbol }, apiKey)
+  const d = await getJson('/quote', { symbol }, apiKey)
   // Finnhub returns all zeros (and t = 0) for symbols it doesn't know.
   if (!d || typeof d.c !== 'number' || (d.c === 0 && !d.t)) {
     return { ok: false, symbol, reason: 'not_found' }
@@ -107,7 +107,7 @@ export async function fetchCandles(
   to: number,
   apiKey: string,
 ): Promise<Candles | null> {
-  const d = await get(
+  const d = await getJson(
     '/stock/candle',
     { symbol, resolution, from: String(Math.floor(from)), to: String(Math.floor(to)) },
     apiKey,
@@ -118,7 +118,7 @@ export async function fetchCandles(
 
 /** Company name → ticker, via Finnhub's symbol search (free). */
 export async function searchSymbol(query: string, apiKey: string): Promise<{ symbol: string; name: string } | null> {
-  const d = await get('/search', { q: query }, apiKey)
+  const d = await getJson('/search', { q: query }, apiKey)
   const list: any[] = Array.isArray(d?.result) ? d.result : []
   // Prefer plain US common stock tickers (no exchange suffix like ".L").
   const pick =
@@ -130,7 +130,7 @@ export async function searchSymbol(query: string, apiKey: string): Promise<{ sym
 
 export async function fetchUsMarketOpen(apiKey: string): Promise<boolean | null> {
   try {
-    const d = await get('/stock/market-status', { exchange: 'US' }, apiKey)
+    const d = await getJson('/stock/market-status', { exchange: 'US' }, apiKey)
     return typeof d?.isOpen === 'boolean' ? d.isOpen : null
   } catch {
     return null
