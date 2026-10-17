@@ -26,6 +26,9 @@ jobs:
         with:
           node-version: 20
       - run: npm install
+      - name: Check code against the real SDK
+        run: npm run typecheck
+        continue-on-error: true
       - run: npm run build
       - id: pages
         uses: actions/configure-pages@v5
