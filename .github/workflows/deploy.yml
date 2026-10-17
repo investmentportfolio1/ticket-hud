@@ -1,0 +1,42 @@
+name: Build and publish Ticker HUD
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: npm run build
+      - id: pages
+        uses: actions/configure-pages@v5
+      # QR code that the Even app scans to open the HUD.
+      - run: npx --yes qrcode -w 600 -o dist/qr.png "${{ steps.pages.outputs.base_url }}/"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qr-code
+          path: dist/qr.png
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,17 @@
+{
+  "package_id": "com.tickerhud.watchlist",
+  "edition": "202601",
+  "name": "Ticker HUD",
+  "version": "0.1.0",
+  "min_app_version": "2.0.0",
+  "min_sdk_version": "0.0.12",
+  "entrypoint": "index.html",
+  "permissions": [
+    {
+      "name": "network",
+      "desc": "Fetches live stock quotes for your watchlist from Finnhub.",
+      "whitelist": ["https://finnhub.io"]
+    }
+  ],
+  "supported_languages": ["en"]
+}
