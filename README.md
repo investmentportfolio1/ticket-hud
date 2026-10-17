@@ -4,7 +4,17 @@ Live stock prices from Finnhub on Even Realities G2 glasses.
 
 - **Phone:** a settings screen (API key, watchlist, refresh speed) plus a live preview.
 - **Glasses:** your watchlist, 8 per page: symbol, price, and day change (▲/▼ %), with US market open/closed and the last update time.
-- **Controls on the glasses:** swipe to change page, tap to refresh now, double-tap to exit.
+- **Voice questions:** tap the glasses and ask out loud, e.g. "Apple price", "Nvidia on March 3 at 2 PM", "Tesla close yesterday", "Amazon high today". The answer shows on the display.
+- **Controls on the glasses:** tap to ask, swipe to change page (or go back from an answer), double-tap to exit.
+
+Live hosted version: https://investmentportfolio1.github.io/ticket-hud/ (QR code: `/qr.png`). Every push to `main` rebuilds and republishes it.
+
+## Keys you need
+
+- **Finnhub** for prices. Past prices (a date or time) need a paid Finnhub plan; live prices work on the free plan.
+- **Deepgram** for speech-to-text (voice questions). Paste it in the app's settings next to the Finnhub key.
+
+Both keys are saved only on your phone.
 
 Your API key is saved only on your phone (in the Even app's storage). It is never written into the code.
 
@@ -50,7 +60,9 @@ Your API key is saved only on your phone (in the Even app's storage). It is neve
 
 ## Files
 
-- `src/main.ts`: settings, refresh loop, glasses controls
+- `src/main.ts`: settings, refresh loop, glasses controls, voice flow
+- `src/ask.ts`: understands the question (stock, date, time) and looks up the answer
+- `src/voice.ts`: streams the glasses microphone to Deepgram
 - `src/glasses.ts`: what's drawn on the G2 display
 - `src/finnhub.ts`: Finnhub requests and rate-limit handling
 - `index.html`: the phone settings screen

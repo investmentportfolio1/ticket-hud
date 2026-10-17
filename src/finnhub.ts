@@ -1,5 +1,5 @@
-// Finnhub REST client: only the two endpoints the HUD needs.
-// Docs: https://finnhub.io/docs/api/quote and /market-status
+// Finnhub REST client: only the endpoints the HUD needs.
+// Docs: https://finnhub.io/docs/api
 
 const BASE = 'https://finnhub.io/api/v1'
 
@@ -8,6 +8,10 @@ export interface Quote {
   price: number // current price
   change: number // change vs previous close
   changePct: number // percent change vs previous close
+  high: number // today's high
+  low: number // today's low
+  open: number // today's open
+  prevClose: number
   time: number // unix seconds of the last trade
 }
 
@@ -15,9 +19,17 @@ export type QuoteResult =
   | { ok: true; quote: Quote }
   | { ok: false; symbol: string; reason: 'not_found' | 'error' }
 
+export interface Candles {
+  t: number[] // unix seconds (start of each bar)
+  o: number[]
+  h: number[]
+  l: number[]
+  c: number[]
+}
+
 export class FinnhubError extends Error {
   constructor(
-    public kind: 'bad_key' | 'rate_limited' | 'network' | 'http',
+    public kind: 'bad_key' | 'no_access' | 'rate_limited' | 'network' | 'http',
     message: string,
   ) {
     super(message)
@@ -32,7 +44,10 @@ async function get(path: string, params: Record<string, string>, apiKey: string)
   } catch {
     throw new FinnhubError('network', "Can't reach Finnhub")
   }
-  if (res.status === 401 || res.status === 403) throw new FinnhubError('bad_key', 'API key rejected')
+  if (res.status === 401) throw new FinnhubError('bad_key', 'API key rejected')
+  // Finnhub answers 403 "You don't have access to this resource" for
+  // endpoints that need a paid plan (e.g. historical candles).
+  if (res.status === 403) throw new FinnhubError('no_access', 'Not included in your Finnhub plan')
   if (res.status === 429) throw new FinnhubError('rate_limited', 'Rate limit hit')
   if (!res.ok) throw new FinnhubError('http', `Finnhub error ${res.status}`)
   return res.json()
@@ -44,19 +59,24 @@ export async function fetchQuote(symbol: string, apiKey: string): Promise<QuoteR
   if (!d || typeof d.c !== 'number' || (d.c === 0 && !d.t)) {
     return { ok: false, symbol, reason: 'not_found' }
   }
+  const n = (v: unknown) => (typeof v === 'number' ? v : 0)
   return {
     ok: true,
     quote: {
       symbol,
       price: d.c,
-      change: typeof d.d === 'number' ? d.d : 0,
-      changePct: typeof d.dp === 'number' ? d.dp : 0,
-      time: d.t ?? 0,
+      change: n(d.d),
+      changePct: n(d.dp),
+      high: n(d.h),
+      low: n(d.l),
+      open: n(d.o),
+      prevClose: n(d.pc),
+      time: n(d.t),
     },
   }
 }
 
-/** Fetch every symbol. Bad-key / rate-limit errors abort the whole batch. */
+/** Fetch every symbol. Key / plan / rate-limit / network errors abort the batch. */
 export async function fetchQuotes(symbols: string[], apiKey: string): Promise<QuoteResult[]> {
   const results: QuoteResult[] = []
   // Small batches keep us well inside Finnhub's 30 requests/second burst limit.
@@ -65,9 +85,7 @@ export async function fetchQuotes(symbols: string[], apiKey: string): Promise<Qu
     const settled = await Promise.all(
       batch.map(s =>
         fetchQuote(s, apiKey).catch(err => {
-          if (err instanceof FinnhubError && (err.kind === 'bad_key' || err.kind === 'rate_limited' || err.kind === 'network')) {
-            throw err
-          }
+          if (err instanceof FinnhubError && err.kind !== 'http') throw err
           return { ok: false, symbol: s, reason: 'error' } as QuoteResult
         }),
       ),
@@ -75,6 +93,39 @@ export async function fetchQuotes(symbols: string[], apiKey: string): Promise<Qu
     results.push(...settled)
   }
   return results
+}
+
+/**
+ * Price bars between two unix times. resolution: '1' | '5' | '15' | '30' | '60' | 'D'.
+ * Returns null when Finnhub has no bars in that range (market closed, holiday).
+ * Needs a paid Finnhub plan; free keys get FinnhubError('no_access').
+ */
+export async function fetchCandles(
+  symbol: string,
+  resolution: string,
+  from: number,
+  to: number,
+  apiKey: string,
+): Promise<Candles | null> {
+  const d = await get(
+    '/stock/candle',
+    { symbol, resolution, from: String(Math.floor(from)), to: String(Math.floor(to)) },
+    apiKey,
+  )
+  if (!d || d.s !== 'ok' || !Array.isArray(d.t) || !d.t.length) return null
+  return { t: d.t, o: d.o, h: d.h, l: d.l, c: d.c }
+}
+
+/** Company name → ticker, via Finnhub's symbol search (free). */
+export async function searchSymbol(query: string, apiKey: string): Promise<{ symbol: string; name: string } | null> {
+  const d = await get('/search', { q: query }, apiKey)
+  const list: any[] = Array.isArray(d?.result) ? d.result : []
+  // Prefer plain US common stock tickers (no exchange suffix like ".L").
+  const pick =
+    list.find(r => r.type === 'Common Stock' && !String(r.symbol).includes('.')) ??
+    list.find(r => !String(r.symbol).includes('.')) ??
+    list[0]
+  return pick ? { symbol: String(pick.symbol), name: String(pick.description ?? '') } : null
 }
 
 export async function fetchUsMarketOpen(apiKey: string): Promise<boolean | null> {

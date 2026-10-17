@@ -57,20 +57,24 @@
       .up { color: var(--up); }
       .down { color: var(--down); }
       .empty { color: var(--dim); font-size: 14px; }
+      #askOut { margin-top: 12px; }
+      .answer-head { font-size: 13px; color: var(--dim); margin: 0 0 4px; }
+      .answer-body { margin: 0; font-variant-numeric: tabular-nums; }
+      .err-text { color: var(--down); font-size: 14px; margin: 0; }
       .controls { color: var(--dim); font-size: 13px; margin: 0; padding-left: 18px; }
     </style>
   </head>
   <body>
     <main>
       <h1>Ticker HUD</h1>
-      <p class="sub">Live prices from Finnhub on your G2 glasses.</p>
+      <p class="sub">Live prices and voice questions on your G2 glasses.</p>
 
       <section class="card">
         <div class="field">
           <label for="apiKey">Finnhub API key</label>
           <div class="row">
             <input id="apiKey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste your key" />
-            <button id="toggleKey" class="ghost" type="button">Show</button>
+            <button class="ghost" type="button" data-toggle="apiKey">Show</button>
           </div>
           <p class="hint">Saved only on this phone. Find it on your Finnhub dashboard.</p>
         </div>
@@ -79,6 +83,21 @@
           <label for="tickers">Watchlist</label>
           <textarea id="tickers" autocapitalize="characters" spellcheck="false" placeholder="AAPL, NVDA, TSLA"></textarea>
           <p class="hint">US stock symbols, separated by commas or spaces. Up to 30.</p>
+        </div>
+
+        <div class="field">
+          <label for="speechKey">Deepgram speech key (for voice)</label>
+          <div class="row">
+            <input id="speechKey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste your key" />
+            <button class="ghost" type="button" data-toggle="speechKey">Show</button>
+          </div>
+          <p class="hint">Turns what you say into text. Get a key at deepgram.com. Saved only on this phone.</p>
+        </div>
+
+        <div class="field">
+          <label for="zone">Times I say are in</label>
+          <select id="zone"></select>
+          <p class="hint">"2 PM" means 2 PM in this time zone. US stocks trade 9:30 AM–4 PM New York time.</p>
         </div>
 
         <div class="field">
@@ -101,10 +120,20 @@
       </section>
 
       <section class="card">
+        <label for="askInput">Try a question</label>
+        <div class="row">
+          <input id="askInput" type="text" autocomplete="off" placeholder="Apple on March 3 at 2 PM" />
+          <button id="askButton" class="ghost" type="button">Ask</button>
+        </div>
+        <p class="hint">Same as asking out loud on the glasses. Past dates need a paid Finnhub plan.</p>
+        <div id="askOut"></div>
+      </section>
+
+      <section class="card">
         <label>On the glasses</label>
         <ul class="controls">
-          <li>Swipe to change page</li>
-          <li>Tap to refresh now</li>
+          <li>Tap, then ask your question out loud</li>
+          <li>Swipe to change page (or go back to the watchlist)</li>
           <li>Double-tap to exit</li>
         </ul>
       </section>

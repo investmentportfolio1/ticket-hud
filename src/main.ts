@@ -1,13 +1,14 @@
-// Ticker HUD: Finnhub watchlist → Even Realities G2.
+// Ticker HUD: Finnhub watchlist + voice questions → Even Realities G2.
 //
 // This page has two faces:
-//   • on the phone (inside the Even app) it is the settings screen below;
-//   • on the glasses it draws the watchlist through the Even Hub SDK.
-// It also works in a normal desktop browser for testing: the settings and
-// live preview run, and the glasses part is skipped.
+//   • on the phone (inside the Even app) it is the settings screen;
+//   • on the glasses it draws the watchlist and answers spoken questions.
+// It also works in a normal browser for testing: settings, live preview and
+// typed questions run; the glasses part is skipped.
 
 import * as EvenSdk from '@evenrealities/even_hub_sdk'
 import { OsEventTypeList, waitForEvenAppBridge, type EvenAppBridge } from '@evenrealities/even_hub_sdk'
+import { MARKET_ZONE, answerQuestion, zoneLabel } from './ask'
 import {
   FinnhubError,
   fetchQuotes,
@@ -17,6 +18,7 @@ import {
   type QuoteResult,
 } from './finnhub'
 import { GlassesView, pageCount } from './glasses'
+import { startVoice, type VoiceSession } from './voice'
 
 // ---------------------------------------------------------------- settings
 
@@ -24,10 +26,19 @@ interface Settings {
   apiKey: string
   tickers: string
   interval: number
+  speechKey: string
+  zone: string // time zone that spoken times are in
 }
 
 const STORAGE_KEY = 'tickerhud.settings'
-const DEFAULTS: Settings = { apiKey: '', tickers: 'AAPL, NVDA, MSFT, TSLA, AMZN', interval: 15 }
+const PHONE_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || MARKET_ZONE
+const DEFAULTS: Settings = {
+  apiKey: '',
+  tickers: 'AAPL, NVDA, MSFT, TSLA, AMZN',
+  interval: 15,
+  speechKey: '',
+  zone: MARKET_ZONE,
+}
 
 function parseSettings(raw: string | null | undefined): Settings | null {
   if (!raw) return null
@@ -37,6 +48,8 @@ function parseSettings(raw: string | null | undefined): Settings | null {
       apiKey: typeof s.apiKey === 'string' ? s.apiKey : '',
       tickers: typeof s.tickers === 'string' ? s.tickers : DEFAULTS.tickers,
       interval: Number(s.interval) > 0 ? Number(s.interval) : DEFAULTS.interval,
+      speechKey: typeof s.speechKey === 'string' ? s.speechKey : '',
+      zone: typeof s.zone === 'string' && s.zone ? s.zone : DEFAULTS.zone,
     }
   } catch {
     return null
@@ -63,10 +76,13 @@ async function saveSettings(s: Settings): Promise<void> {
 
 // ---------------------------------------------------------------- state
 
+type Mode = 'watchlist' | 'listening' | 'thinking' | 'answer'
+
 let bridge: EvenAppBridge | null = null
 let view: GlassesView | null = null
 let settings: Settings = readBrowserStorage() ?? { ...DEFAULTS }
 
+let mode: Mode = 'watchlist'
 let results: QuoteResult[] = []
 let page = 0
 let marketOpen: boolean | null = null
@@ -77,7 +93,7 @@ let halted = false // set after a rejected key, cleared on save
 let inFlight = false
 
 // Keep the page and last quotes when the phone app goes to the background.
-// (Guarded so older SDK versions without these helpers still run.)
+// (Guarded so SDK versions without these helpers still run.)
 const sdk = EvenSdk as unknown as Record<string, unknown>
 if (typeof sdk.setBackgroundState === 'function' && typeof sdk.onBackgroundRestore === 'function') {
   const setBg = sdk.setBackgroundState as (k: string, fn: () => object) => void
@@ -94,18 +110,29 @@ if (typeof sdk.setBackgroundState === 'function' && typeof sdk.onBackgroundResto
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
 const apiKeyInput = $<HTMLInputElement>('apiKey')
+const speechKeyInput = $<HTMLInputElement>('speechKey')
 const tickersInput = $<HTMLTextAreaElement>('tickers')
 const intervalSelect = $<HTMLSelectElement>('interval')
+const zoneSelect = $<HTMLSelectElement>('zone')
 const saveButton = $<HTMLButtonElement>('save')
-const toggleKey = $<HTMLButtonElement>('toggleKey')
 const statusEl = $<HTMLParagraphElement>('status')
 const previewEl = $<HTMLDivElement>('preview')
+const askInput = $<HTMLInputElement>('askInput')
+const askButton = $<HTMLButtonElement>('askButton')
+const askOut = $<HTMLDivElement>('askOut')
+
+// Time-zone choices: New York (market time) and the phone's own zone.
+zoneSelect.innerHTML =
+  `<option value="${MARKET_ZONE}">New York (US market time)</option>` +
+  (PHONE_ZONE !== MARKET_ZONE ? `<option value="${PHONE_ZONE}">My time (${zoneLabel(PHONE_ZONE)})</option>` : '')
 
 function fillForm(s: Settings) {
   apiKeyInput.value = s.apiKey
+  speechKeyInput.value = s.speechKey
   tickersInput.value = s.tickers
   const opt = [...intervalSelect.options].find(o => Number(o.value) === s.interval)
   intervalSelect.value = opt ? opt.value : String(DEFAULTS.interval)
+  zoneSelect.value = [...zoneSelect.options].some(o => o.value === s.zone) ? s.zone : MARKET_ZONE
 }
 
 function setStatus(msg: string, tone: '' | 'ok' | 'err' = '') {
@@ -137,18 +164,23 @@ function renderPreview() {
   previewEl.innerHTML = `<table><thead><tr><th>Symbol</th><th class="num">Price</th><th class="num">Day</th></tr></thead><tbody>${rows}</tbody></table>`
 }
 
-toggleKey.addEventListener('click', () => {
-  const show = apiKeyInput.type === 'password'
-  apiKeyInput.type = show ? 'text' : 'password'
-  toggleKey.textContent = show ? 'Hide' : 'Show'
-})
+for (const btn of document.querySelectorAll<HTMLButtonElement>('[data-toggle]')) {
+  btn.addEventListener('click', () => {
+    const input = $<HTMLInputElement>(btn.dataset.toggle!)
+    const show = input.type === 'password'
+    input.type = show ? 'text' : 'password'
+    btn.textContent = show ? 'Hide' : 'Show'
+  })
+}
 
 saveButton.addEventListener('click', async () => {
   const symbols = parseSymbols(tickersInput.value)
   const next: Settings = {
     apiKey: apiKeyInput.value.trim(),
+    speechKey: speechKeyInput.value.trim(),
     tickers: symbols.join(', '),
     interval: Number(intervalSelect.value) || DEFAULTS.interval,
+    zone: zoneSelect.value || MARKET_ZONE,
   }
   if (!next.apiKey) return setStatus('Paste your Finnhub API key first.', 'err')
   if (!symbols.length) return setStatus('Add at least one ticker.', 'err')
@@ -170,7 +202,40 @@ saveButton.addEventListener('click', async () => {
   }
 })
 
-// ---------------------------------------------------------------- refresh loop
+// Typed questions: same brain as the voice feature, handy for testing.
+async function askTyped() {
+  const q = askInput.value.trim()
+  if (!q) return
+  if (!settings.apiKey) {
+    askOut.innerHTML = '<p class="err-text">Save your Finnhub key first.</p>'
+    return
+  }
+  askButton.disabled = true
+  askOut.innerHTML = '<p class="empty">Looking up…</p>'
+  try {
+    const a = await answerQuestion(q, { apiKey: settings.apiKey, watchlist: parseSymbols(settings.tickers), zone: settings.zone })
+    askOut.innerHTML = `<p class="answer-head">${escapeHtml(a.header)}</p><p class="answer-body">${escapeHtml(a.body).replace(/\n/g, '<br>')}</p>`
+  } catch (err) {
+    askOut.innerHTML = `<p class="err-text">${escapeHtml(errorText(err))}</p>`
+  } finally {
+    askButton.disabled = false
+  }
+}
+askButton.addEventListener('click', () => void askTyped())
+askInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') void askTyped()
+})
+
+function errorText(err: unknown): string {
+  if (err instanceof FinnhubError) {
+    if (err.kind === 'bad_key') return 'Finnhub rejected the API key.'
+    if (err.kind === 'rate_limited') return 'Finnhub rate limit hit. Try again in a minute.'
+    return err.message
+  }
+  return err instanceof Error ? err.message : String(err)
+}
+
+// ---------------------------------------------------------------- watchlist loop
 
 function schedule() {
   if (timer) clearTimeout(timer)
@@ -180,13 +245,18 @@ function schedule() {
   timer = setTimeout(() => void refresh(), secs * 1000)
 }
 
+function drawWatchlist(stale = false) {
+  if (mode !== 'watchlist' || !view) return
+  if (results.length) void view.showQuotes(results, page, marketOpen, stale)
+}
+
 async function refresh(): Promise<void> {
   if (inFlight) return
   const symbols = parseSymbols(settings.tickers)
 
   if (!settings.apiKey || !symbols.length) {
     setStatus('Add your Finnhub key and watchlist, then tap Save.')
-    await view?.showMessage('Open Ticker HUD on your phone\nand add your Finnhub API key\nand watchlist.')
+    if (mode === 'watchlist') await view?.showMessage('Open Ticker HUD on your phone\nand add your Finnhub API key\nand watchlist.')
     return
   }
 
@@ -207,24 +277,137 @@ async function refresh(): Promise<void> {
       'ok',
     )
     renderPreview()
-    await view?.showQuotes(results, page, marketOpen)
+    drawWatchlist()
   } catch (err) {
     const e = err instanceof FinnhubError ? err : new FinnhubError('network', String(err))
     if (e.kind === 'bad_key') {
       halted = true
       setStatus('Finnhub rejected this API key. Check it and save again.', 'err')
-      await view?.showMessage('Finnhub rejected the API key.\nFix it in Ticker HUD on your phone.')
+      if (mode === 'watchlist') await view?.showMessage('Finnhub rejected the API key.\nFix it in Ticker HUD on your phone.')
     } else {
       if (e.kind === 'rate_limited') backoff = Math.min(backoff * 2, 8)
       const msg = e.kind === 'rate_limited' ? 'Finnhub rate limit hit, slowing down.' : `${e.message}. Retrying…`
       setStatus(msg, 'err')
-      if (results.length) await view?.showQuotes(results, page, marketOpen, true)
-      else await view?.showMessage(`${e.message}.\nRetrying shortly.`)
+      if (results.length) drawWatchlist(true)
+      else if (mode === 'watchlist') await view?.showMessage(`${e.message}.\nRetrying shortly.`)
     }
   } finally {
     inFlight = false
     schedule()
   }
+}
+
+// ---------------------------------------------------------------- voice questions
+
+const EXAMPLES = 'e.g. "Apple price"\n"Nvidia on March 3 at 2 PM"\n"Tesla close yesterday"'
+const MAX_LISTEN_MS = 15_000
+
+let voice: VoiceSession | null = null
+let listenTimer: ReturnType<typeof setTimeout> | null = null
+let lastHeard = ''
+let heardDrawTimer: ReturnType<typeof setTimeout> | null = null
+
+async function startListening() {
+  if (!bridge || !view) return
+  if (!settings.apiKey) {
+    mode = 'answer'
+    await view.showMessage('Add your Finnhub key in Ticker HUD\non your phone first.', 'ASK A QUESTION')
+    return
+  }
+  if (!settings.speechKey) {
+    mode = 'answer'
+    await view.showMessage(
+      'To ask by voice, add a Deepgram speech key\nin Ticker HUD settings on your phone.',
+      'ASK A QUESTION',
+    )
+    return
+  }
+
+  mode = 'listening'
+  lastHeard = ''
+  await view.showMessage(`Listening…\n\n${EXAMPLES}`, 'ASK A QUESTION  ·  tap when done')
+
+  const hints = parseSymbols(settings.tickers)
+  try {
+    voice = await startVoice(
+      settings.speechKey,
+      hints,
+      heard => {
+        if (mode !== 'listening') return
+        lastHeard = heard.text
+        if (heard.done) {
+          void stopListeningAndAnswer()
+          return
+        }
+        // Throttle display writes; the Bluetooth link is slow.
+        if (!heardDrawTimer) {
+          heardDrawTimer = setTimeout(() => {
+            heardDrawTimer = null
+            if (mode === 'listening') void view?.showMessage(`"${lastHeard}"`, 'LISTENING  ·  tap when done')
+          }, 200)
+        }
+      },
+      msg => {
+        if (mode === 'listening') void stopListeningAndAnswer(msg)
+      },
+    )
+  } catch (err) {
+    mode = 'answer'
+    await view.showMessage(errorText(err), "COULDN'T LISTEN")
+    return
+  }
+
+  if (mode !== 'listening') {
+    // user tapped/cancelled while connecting
+    void voice.finish()
+    voice = null
+    return
+  }
+  await bridge.audioControl(true)
+  listenTimer = setTimeout(() => void stopListeningAndAnswer(), MAX_LISTEN_MS)
+}
+
+async function stopListeningAndAnswer(problem?: string) {
+  if (mode !== 'listening') return
+  mode = 'thinking'
+  if (listenTimer) clearTimeout(listenTimer)
+  listenTimer = null
+  if (heardDrawTimer) clearTimeout(heardDrawTimer)
+  heardDrawTimer = null
+  await bridge?.audioControl(false)
+
+  const session = voice
+  voice = null
+  const text = ((session ? await session.finish() : '') || lastHeard).trim()
+
+  if (!text) {
+    mode = 'answer'
+    await view?.showMessage(
+      `${problem ? problem + '\n' : ''}I didn't catch that. Tap to try again.\n\n${EXAMPLES}`,
+      'ASK A QUESTION',
+    )
+    return
+  }
+
+  await view?.showMessage(`"${text}"\n\nLooking up…`, 'ASK A QUESTION')
+  try {
+    const a = await answerQuestion(text, {
+      apiKey: settings.apiKey,
+      watchlist: parseSymbols(settings.tickers),
+      zone: settings.zone,
+    })
+    mode = 'answer'
+    await view?.showMessage(`${a.body}\n\nTap: ask again · Swipe: watchlist`, a.header)
+  } catch (err) {
+    mode = 'answer'
+    await view?.showMessage(`${errorText(err)}\n\nTap to try again.`, 'ASK A QUESTION')
+  }
+}
+
+function backToWatchlist() {
+  mode = 'watchlist'
+  if (results.length) drawWatchlist()
+  else void refresh()
 }
 
 // ---------------------------------------------------------------- glasses input
@@ -238,6 +421,13 @@ function eventTypeOf(envelope?: { eventType?: OsEventTypeList }): OsEventTypeLis
 
 function attachInput(b: EvenAppBridge) {
   const unsubscribe = b.onEvenHubEvent(event => {
+    // Microphone audio arrives on its own envelope.
+    const pcm = event.audioEvent?.audioPcm
+    if (pcm) {
+      voice?.sendPcm(pcm)
+      return
+    }
+
     const sys = eventTypeOf(event.sysEvent)
     const txt = eventTypeOf(event.textEvent)
 
@@ -249,6 +439,8 @@ function attachInput(b: EvenAppBridge) {
     if (sys === OsEventTypeList.SYSTEM_EXIT_EVENT || sys === OsEventTypeList.ABNORMAL_EXIT_EVENT) {
       if (timer) clearTimeout(timer)
       halted = true
+      if (voice) void voice.finish()
+      void b.audioControl(false)
       unsubscribe()
       return
     }
@@ -259,17 +451,22 @@ function attachInput(b: EvenAppBridge) {
     }
 
     if (txt === OsEventTypeList.SCROLL_BOTTOM_EVENT || txt === OsEventTypeList.SCROLL_TOP_EVENT) {
+      if (mode === 'answer') {
+        backToWatchlist()
+        return
+      }
+      if (mode !== 'watchlist') return
       const pages = pageCount(results.length)
       if (pages < 2) return
       const step = txt === OsEventTypeList.SCROLL_BOTTOM_EVENT ? 1 : -1
       page = (page + step + pages) % pages
-      void view?.showQuotes(results, page, marketOpen)
+      drawWatchlist()
       return
     }
 
     if (sys === OsEventTypeList.CLICK_EVENT || txt === OsEventTypeList.CLICK_EVENT) {
-      if (halted) return
-      void refresh()
+      if (mode === 'listening') void stopListeningAndAnswer()
+      else if (mode === 'watchlist' || mode === 'answer') void startListening()
     }
   })
 }

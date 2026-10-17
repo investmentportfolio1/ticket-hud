@@ -53,10 +53,11 @@ function text(
   })
 }
 
+// Message screens get a two-line header (e.g. "AAPL · Mon Mar 3, 2025, 2:00 PM").
 function messageContainers(header: string, body: string): TextContainerProperty[] {
   return [
-    text(HEADER, 0, 0, 576, 36, header),
-    text(COL_SYM, 0, BODY_Y, 576, BODY_H, body, true),
+    text(HEADER, 0, 0, 576, 64, header),
+    text(COL_SYM, 0, 68, 576, 220, body, true),
   ]
 }
 
