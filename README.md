@@ -11,6 +11,8 @@ Live hosted version: https://investmentportfolio1.github.io/ticket-hud/ (QR code
 
 ## Keys you need
 
+- **Claude API key** (optional, recommended) turns on the AI assistant: ask anything in normal words, with follow-ups. It uses live Finnhub data and searches the web for things like Fed decisions. Get one at console.anthropic.com (billed per use).
+
 - **Finnhub** for prices. Past prices (a date or time) need a paid Finnhub plan; live prices work on the free plan.
 - **ElevenLabs or Deepgram** for speech-to-text (voice questions). Paste either key in the app's "Speech key" field; ElevenLabs keys (starting `sk_`) are detected automatically.
 
@@ -61,6 +63,7 @@ Your API key is saved only on your phone (in the Even app's storage). It is neve
 ## Files
 
 - `src/main.ts`: settings, refresh loop, glasses controls, voice flow
+- `src/agent.ts`: the AI assistant (Claude with stock tools + web search)
 - `src/ask.ts`: understands the question (stock, date, time, topic) and looks up the answer
 - `src/news.ts`: market news, Fed headlines, earnings results and calendar, market overview
 - `src/voice.ts`: streams the glasses microphone to ElevenLabs Scribe or Deepgram

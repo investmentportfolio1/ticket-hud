@@ -19,6 +19,7 @@ import {
 } from './finnhub'
 import { GlassesView, pageCount } from './glasses'
 import { mountUi } from './ui'
+import { AgentError, askAgent, type AgentContext } from './agent'
 import { startVoice, type VoiceSession } from './voice'
 
 // ---------------------------------------------------------------- settings
@@ -28,6 +29,7 @@ interface Settings {
   tickers: string
   interval: number
   speechKey: string
+  aiKey: string // Claude API key: turns on the AI assistant
   zone: string // time zone that spoken times are in
 }
 
@@ -38,6 +40,7 @@ const DEFAULTS: Settings = {
   tickers: 'AAPL, NVDA, MSFT, TSLA, AMZN',
   interval: 15,
   speechKey: '',
+  aiKey: '',
   zone: MARKET_ZONE,
 }
 
@@ -50,6 +53,7 @@ function parseSettings(raw: string | null | undefined): Settings | null {
       tickers: typeof s.tickers === 'string' ? s.tickers : DEFAULTS.tickers,
       interval: Number(s.interval) > 0 ? Number(s.interval) : DEFAULTS.interval,
       speechKey: typeof s.speechKey === 'string' ? s.speechKey : '',
+      aiKey: typeof s.aiKey === 'string' ? s.aiKey : '',
       zone: typeof s.zone === 'string' && s.zone ? s.zone : DEFAULTS.zone,
     }
   } catch {
@@ -116,6 +120,7 @@ mountUi()
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
 const apiKeyInput = $<HTMLInputElement>('apiKey')
 const speechKeyInput = $<HTMLInputElement>('speechKey')
+const aiKeyInput = $<HTMLInputElement>('aiKey')
 const tickersInput = $<HTMLTextAreaElement>('tickers')
 const intervalSelect = $<HTMLSelectElement>('interval')
 const zoneSelect = $<HTMLSelectElement>('zone')
@@ -134,6 +139,7 @@ zoneSelect.innerHTML =
 function fillForm(s: Settings) {
   apiKeyInput.value = s.apiKey
   speechKeyInput.value = s.speechKey
+  aiKeyInput.value = s.aiKey
   tickersInput.value = s.tickers
   const opt = [...intervalSelect.options].find(o => Number(o.value) === s.interval)
   intervalSelect.value = opt ? opt.value : String(DEFAULTS.interval)
@@ -183,6 +189,7 @@ saveButton.addEventListener('click', async () => {
   const next: Settings = {
     apiKey: apiKeyInput.value.trim(),
     speechKey: speechKeyInput.value.trim(),
+    aiKey: aiKeyInput.value.trim(),
     tickers: symbols.join(', '),
     interval: Number(intervalSelect.value) || DEFAULTS.interval,
     zone: zoneSelect.value || MARKET_ZONE,
@@ -206,6 +213,48 @@ saveButton.addEventListener('click', async () => {
     saveButton.disabled = false
   }
 })
+
+// One entry point for every question. With a Claude key the AI assistant
+// answers anything; without one (or if Claude is unreachable) the built-in
+// rule-based answers take over.
+async function setWatchlist(list: string[]): Promise<string[]> {
+  const next = parseSymbols(list.join(','))
+  settings = { ...settings, tickers: next.join(', ') }
+  fillForm(settings)
+  await saveSettings(settings)
+  marketCheckedAt = 0
+  void refresh()
+  return next
+}
+
+function agentContext(): AgentContext {
+  return {
+    claudeKey: settings.aiKey,
+    finnhubKey: settings.apiKey,
+    zone: settings.zone,
+    watchlist: () => parseSymbols(settings.tickers),
+    showWatchlist: () => undefined,
+    addToWatchlist: syms => setWatchlist([...parseSymbols(settings.tickers), ...syms]),
+    removeFromWatchlist: syms => setWatchlist(parseSymbols(settings.tickers).filter(s => !syms.includes(s))),
+  }
+}
+
+async function respond(text: string): Promise<'watchlist' | Answer> {
+  if (settings.aiKey) {
+    try {
+      const r = await askAgent(text, agentContext())
+      return r.showWatchlist ? 'watchlist' : r.answer
+    } catch (err) {
+      if (err instanceof AgentError && err.kind === 'bad_key') {
+        return { header: 'AI ASSISTANT', body: 'Claude rejected the API key.\nCheck it in Ticker HUD settings on your phone.' }
+      }
+      // Claude busy/unreachable: fall through to the built-in answers.
+    }
+  }
+  const cmd = await runCommand(text)
+  if (cmd) return cmd
+  return answerQuestion(text, { apiKey: settings.apiKey, watchlist: parseSymbols(settings.tickers), zone: settings.zone })
+}
 
 // Spoken/typed commands: "show my watchlist", "add AMD to my watchlist", "remove Tesla from my watchlist".
 // Returns 'watchlist' to switch to the live list, an Answer to show, or null if it isn't a command.
@@ -257,12 +306,11 @@ async function askTyped() {
   askButton.disabled = true
   askOut.innerHTML = '<p class="empty">Looking up…</p>'
   try {
-    const cmd = await runCommand(q)
-    if (cmd === 'watchlist') {
+    const a = await respond(q)
+    if (a === 'watchlist') {
       askOut.innerHTML = '<p class="empty">On the glasses this shows your live watchlist (see the preview above).</p>'
       return
     }
-    const a = cmd ?? (await answerQuestion(q, { apiKey: settings.apiKey, watchlist: parseSymbols(settings.tickers), zone: settings.zone }))
     const pages = [a.body, ...(a.more ?? [])]
     askOut.innerHTML =
       `<p class="answer-head">${escapeHtml(a.header.replace(/ {2}· swipe for (more|headlines)/, ''))}</p>` +
@@ -464,17 +512,12 @@ async function stopListeningAndAnswer(problem?: string) {
   }
 
   try {
-    const cmd = await runCommand(text)
-    if (cmd === 'watchlist') {
+    await view?.showMessage(`"${text}"\n\nThinking…`, 'ASK A QUESTION')
+    const a = await respond(text)
+    if (a === 'watchlist') {
       backToWatchlist()
       return
     }
-    if (!cmd) await view?.showMessage(`"${text}"\n\nLooking up…`, 'ASK A QUESTION')
-    const a = cmd ?? await answerQuestion(text, {
-      apiKey: settings.apiKey,
-      watchlist: parseSymbols(settings.tickers),
-      zone: settings.zone,
-    })
     mode = 'answer'
     answerHeader = a.header
     answerPages = [a.body, ...(a.more ?? [])]

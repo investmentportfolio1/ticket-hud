@@ -92,6 +92,15 @@ const HTML = `<main>
         </div>
 
         <div class="field">
+          <label for="aiKey">Claude API key (AI assistant)</label>
+          <div class="row">
+            <input id="aiKey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="sk-ant-…" />
+            <button class="ghost" type="button" data-toggle="aiKey">Show</button>
+          </div>
+          <p class="hint">Lets you ask anything in normal words, with follow-ups. Get a key at console.anthropic.com (billed per use). Without it, the app answers set questions only.</p>
+        </div>
+
+        <div class="field">
           <label for="zone">Times I say are in</label>
           <select id="zone"></select>
           <p class="hint">"2 PM" means 2 PM in this time zone. US stocks trade 9:30 AM–4 PM New York time.</p>
@@ -119,7 +128,7 @@ const HTML = `<main>
       <section class="card">
         <label for="askInput">Try a question</label>
         <div class="row">
-          <input id="askInput" type="text" autocomplete="off" placeholder="Tesla earnings, market news…" />
+          <input id="askInput" type="text" autocomplete="off" placeholder="Why is Nvidia down today?" />
           <button id="askButton" class="ghost" type="button">Ask</button>
         </div>
         <p class="hint">Same as asking out loud on the glasses: prices (now or on a date), "market news", "Apple news", "Tesla earnings", "earnings this week", "what did the Fed do", "how is the market". Past dates need a paid Finnhub plan.</p>
