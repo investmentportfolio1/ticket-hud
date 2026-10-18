@@ -9,8 +9,8 @@
   "permissions": [
     {
       "name": "network",
-      "desc": "Loads the latest Ticker HUD, fetches stock prices from Finnhub and turns your voice into text with Deepgram.",
-      "whitelist": ["https://investmentportfolio1.github.io", "https://finnhub.io", "https://api.deepgram.com", "wss://api.deepgram.com"]
+      "desc": "Loads the latest Ticker HUD, fetches stock prices from Finnhub and turns your voice into text with ElevenLabs or Deepgram.",
+      "whitelist": ["https://investmentportfolio1.github.io", "https://finnhub.io", "https://api.deepgram.com", "wss://api.deepgram.com", "https://api.elevenlabs.io", "wss://api.elevenlabs.io"]
     },
     {
       "name": "g2-microphone",

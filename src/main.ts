@@ -391,7 +391,7 @@ async function startListening() {
   if (!settings.speechKey) {
     mode = 'answer'
     await view.showMessage(
-      'To ask by voice, add a Deepgram speech key\nin Ticker HUD settings on your phone.',
+      'To ask by voice, add an ElevenLabs or Deepgram\nspeech key in Ticker HUD settings on your phone.',
       'ASK A QUESTION',
     )
     return

@@ -12,7 +12,7 @@ Live hosted version: https://investmentportfolio1.github.io/ticket-hud/ (QR code
 ## Keys you need
 
 - **Finnhub** for prices. Past prices (a date or time) need a paid Finnhub plan; live prices work on the free plan.
-- **Deepgram** for speech-to-text (voice questions). Paste it in the app's settings next to the Finnhub key.
+- **ElevenLabs or Deepgram** for speech-to-text (voice questions). Paste either key in the app's "Speech key" field; ElevenLabs keys (starting `sk_`) are detected automatically.
 
 Both keys are saved only on your phone.
 
@@ -63,7 +63,7 @@ Your API key is saved only on your phone (in the Even app's storage). It is neve
 - `src/main.ts`: settings, refresh loop, glasses controls, voice flow
 - `src/ask.ts`: understands the question (stock, date, time, topic) and looks up the answer
 - `src/news.ts`: market news, Fed headlines, earnings results and calendar, market overview
-- `src/voice.ts`: streams the glasses microphone to Deepgram
+- `src/voice.ts`: streams the glasses microphone to ElevenLabs Scribe or Deepgram
 - `src/glasses.ts`: what's drawn on the G2 display
 - `src/finnhub.ts`: Finnhub requests and rate-limit handling
 - `index.html`: the phone settings screen

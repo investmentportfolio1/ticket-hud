@@ -83,12 +83,12 @@ const HTML = `<main>
         </div>
 
         <div class="field">
-          <label for="speechKey">Deepgram speech key (for voice)</label>
+          <label for="speechKey">Speech key (ElevenLabs or Deepgram)</label>
           <div class="row">
             <input id="speechKey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste your key" />
             <button class="ghost" type="button" data-toggle="speechKey">Show</button>
           </div>
-          <p class="hint">Turns what you say into text. Get a key at deepgram.com. Saved only on this phone.</p>
+          <p class="hint">Turns what you say into text. Paste an ElevenLabs key (starts with sk_) or a Deepgram key. Saved only on this phone.</p>
         </div>
 
         <div class="field">
