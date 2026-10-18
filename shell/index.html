@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
+    <title>Ticker HUD</title>
+    <style>
+      html, body { margin: 0; background: #111111; color: #8a8a8a; font: 14px -apple-system, system-ui, sans-serif; }
+      #app:empty::before { content: "Loading Ticker HUD…"; display: block; padding: 24px 20px; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script>
+      // Installed shell: always runs the latest published Ticker HUD, so updates
+      // reach the glasses without reinstalling. If the script can't load, open
+      // the hosted page directly instead.
+      (function () {
+        var BASE = 'https://investmentportfolio1.github.io/ticket-hud/'
+        function fallback() {
+          if (!window.__tickerhudLoaded) location.replace(BASE)
+        }
+        var s = document.createElement('script')
+        s.type = 'module'
+        s.crossOrigin = 'anonymous'
+        s.src = BASE + 'app.js?t=' + Date.now()
+        s.onerror = fallback
+        document.head.appendChild(s)
+        setTimeout(fallback, 10000)
+      })()
+    </script>
+  </body>
+</html>

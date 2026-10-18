@@ -18,6 +18,7 @@ import {
   type QuoteResult,
 } from './finnhub'
 import { GlassesView, pageCount } from './glasses'
+import { mountUi } from './ui'
 import { startVoice, type VoiceSession } from './voice'
 
 // ---------------------------------------------------------------- settings
@@ -107,6 +108,10 @@ if (typeof sdk.setBackgroundState === 'function' && typeof sdk.onBackgroundResto
 }
 
 // ---------------------------------------------------------------- phone UI
+
+// Tell the installed shell that the live code loaded.
+;(window as unknown as { __tickerhudLoaded?: boolean }).__tickerhudLoaded = true
+mountUi()
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
 const apiKeyInput = $<HTMLInputElement>('apiKey')

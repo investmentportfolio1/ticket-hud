@@ -1,0 +1,145 @@
+// The phone screen (settings, preview, test box). Built from JavaScript so
+// the installed Even app shell can stay tiny and always load the latest UI.
+
+const CSS = `
+      :root {
+        --text: #ffffff;
+        --dim: #8a8a8a;
+        --bg: #111111;
+        --surface: #1a1a1a;
+        --input: rgba(255, 255, 255, 0.08);
+        --accent: #fef991;
+        --up: #7fd88f;
+        --down: #ff8a80;
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 16px/1.45 -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+        letter-spacing: -0.01em;
+        touch-action: manipulation;
+        -webkit-text-size-adjust: 100%;
+        overscroll-behavior: none;
+      }
+      main { max-width: 520px; margin: 0 auto; padding: 24px 20px 48px; }
+      h1 { font-size: 24px; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 4px; }
+      .sub { color: var(--dim); font-size: 13px; margin: 0 0 24px; }
+      .card { background: var(--surface); border-radius: 14px; padding: 16px; margin-bottom: 16px; }
+      label { display: block; font-size: 11px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--dim); margin: 0 0 8px; }
+      .field + .field { margin-top: 16px; }
+      input, textarea, select {
+        width: 100%; font: inherit; color: var(--text); background: var(--input);
+        border: 0; border-radius: 10px; padding: 12px; outline: none;
+      }
+      textarea { resize: vertical; min-height: 72px; text-transform: uppercase; }
+      .row { display: flex; gap: 8px; }
+      .row input { flex: 1; }
+      .ghost { background: var(--input); color: var(--text); border: 0; border-radius: 10px; padding: 0 14px; font: inherit; font-size: 14px; }
+      .hint { color: var(--dim); font-size: 13px; margin: 8px 0 0; }
+      .hint a { color: var(--text); }
+      button.primary {
+        width: 100%; margin-top: 16px; padding: 14px; border: 0; border-radius: 12px;
+        background: var(--accent); color: #232323; font: inherit; font-weight: 600;
+      }
+      button.primary:disabled { opacity: 0.6; }
+      #status { font-size: 13px; color: var(--dim); min-height: 20px; margin: 12px 0 0; }
+      #status.err { color: var(--down); }
+      #status.ok { color: var(--up); }
+      table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+      th { text-align: left; font-size: 11px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--dim); padding: 0 0 8px; }
+      td { padding: 8px 0; border-top: 1px solid rgba(255, 255, 255, 0.06); }
+      td.num, th.num { text-align: right; }
+      .up { color: var(--up); }
+      .down { color: var(--down); }
+      .empty { color: var(--dim); font-size: 14px; }
+      #askOut { margin-top: 12px; }
+      .answer-head { font-size: 13px; color: var(--dim); margin: 0 0 4px; }
+      .answer-body { margin: 0; font-variant-numeric: tabular-nums; }
+      #askOut hr { border: 0; border-top: 1px solid rgba(255,255,255,0.08); margin: 10px 0; }
+      .err-text { color: var(--down); font-size: 14px; margin: 0; }
+      .controls { color: var(--dim); font-size: 13px; margin: 0; padding-left: 18px; }
+    `
+
+const HTML = `<main>
+      <h1>Ticker HUD</h1>
+      <p class="sub">Live prices and voice questions on your G2 glasses.</p>
+
+      <section class="card">
+        <div class="field">
+          <label for="apiKey">Finnhub API key</label>
+          <div class="row">
+            <input id="apiKey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste your key" />
+            <button class="ghost" type="button" data-toggle="apiKey">Show</button>
+          </div>
+          <p class="hint">Saved only on this phone. Find it on your Finnhub dashboard.</p>
+        </div>
+
+        <div class="field">
+          <label for="tickers">Watchlist</label>
+          <textarea id="tickers" autocapitalize="characters" spellcheck="false" placeholder="AAPL, NVDA, TSLA"></textarea>
+          <p class="hint">US stock symbols, separated by commas or spaces. Up to 30.</p>
+        </div>
+
+        <div class="field">
+          <label for="speechKey">Deepgram speech key (for voice)</label>
+          <div class="row">
+            <input id="speechKey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste your key" />
+            <button class="ghost" type="button" data-toggle="speechKey">Show</button>
+          </div>
+          <p class="hint">Turns what you say into text. Get a key at deepgram.com. Saved only on this phone.</p>
+        </div>
+
+        <div class="field">
+          <label for="zone">Times I say are in</label>
+          <select id="zone"></select>
+          <p class="hint">"2 PM" means 2 PM in this time zone. US stocks trade 9:30 AM–4 PM New York time.</p>
+        </div>
+
+        <div class="field">
+          <label for="interval">Refresh every</label>
+          <select id="interval">
+            <option value="15">15 seconds</option>
+            <option value="30">30 seconds</option>
+            <option value="60">1 minute</option>
+            <option value="300">5 minutes</option>
+          </select>
+        </div>
+
+        <button id="save" class="primary" type="button">Save and start</button>
+        <p id="status"></p>
+      </section>
+
+      <section class="card">
+        <label>Live preview</label>
+        <div id="preview"><p class="empty">Add your key and watchlist to see prices.</p></div>
+      </section>
+
+      <section class="card">
+        <label for="askInput">Try a question</label>
+        <div class="row">
+          <input id="askInput" type="text" autocomplete="off" placeholder="Tesla earnings, market news…" />
+          <button id="askButton" class="ghost" type="button">Ask</button>
+        </div>
+        <p class="hint">Same as asking out loud on the glasses: prices (now or on a date), "market news", "Apple news", "Tesla earnings", "earnings this week", "what did the Fed do", "how is the market". Past dates need a paid Finnhub plan.</p>
+        <div id="askOut"></div>
+      </section>
+
+      <section class="card">
+        <label>On the glasses</label>
+        <ul class="controls">
+          <li>Tap, then ask your question out loud</li>
+          <li>Swipe to change page (or go back to the watchlist)</li>
+          <li>Double-tap to exit</li>
+        </ul>
+      </section>
+    </main>`
+
+export function mountUi(): void {
+  const style = document.createElement('style')
+  style.textContent = CSS
+  document.head.appendChild(style)
+  const root = document.getElementById('app') ?? document.body
+  root.innerHTML = HTML
+}

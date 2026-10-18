@@ -2,15 +2,15 @@
   "package_id": "com.tickerhud.watchlist",
   "edition": "202601",
   "name": "Ticker HUD",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "min_app_version": "2.0.0",
   "min_sdk_version": "0.0.12",
   "entrypoint": "index.html",
   "permissions": [
     {
       "name": "network",
-      "desc": "Fetches stock prices from Finnhub and turns your voice into text with Deepgram.",
-      "whitelist": ["https://finnhub.io", "https://api.deepgram.com", "wss://api.deepgram.com"]
+      "desc": "Loads the latest Ticker HUD, fetches stock prices from Finnhub and turns your voice into text with Deepgram.",
+      "whitelist": ["https://investmentportfolio1.github.io", "https://finnhub.io", "https://api.deepgram.com", "wss://api.deepgram.com"]
     },
     {
       "name": "g2-microphone",

@@ -30,10 +30,11 @@ jobs:
         run: npm run typecheck
         continue-on-error: true
       - run: npm run build
-      # Install file for the Even app (upload to hub.evenrealities.com → Builds).
+      # Install file for the Even app: a small shell that loads the live app.js,
+      # so it never needs reinstalling (upload once to hub.evenrealities.com).
       - name: Package for Even Hub
         id: pack
-        run: npx evenhub pack app.json dist -o ticker-hud.ehpk
+        run: npx evenhub pack app.json shell -o ticker-hud.ehpk
         continue-on-error: true
       - id: pages
         uses: actions/configure-pages@v5
