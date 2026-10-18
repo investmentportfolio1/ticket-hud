@@ -8,7 +8,7 @@
 
 import * as EvenSdk from '@evenrealities/even_hub_sdk'
 import { OsEventTypeList, waitForEvenAppBridge, type EvenAppBridge } from '@evenrealities/even_hub_sdk'
-import { MARKET_ZONE, answerQuestion, zoneLabel } from './ask'
+import { MARKET_ZONE, answerQuestion, detectCommand, parseQuestion, resolveSymbol, zoneLabel, type Answer } from './ask'
 import {
   FinnhubError,
   fetchQuotes,
@@ -202,6 +202,45 @@ saveButton.addEventListener('click', async () => {
   }
 })
 
+// Spoken/typed commands: "show my watchlist", "add AMD to my watchlist", "remove Tesla from my watchlist".
+// Returns 'watchlist' to switch to the live list, an Answer to show, or null if it isn't a command.
+async function runCommand(text: string): Promise<'watchlist' | Answer | null> {
+  const cmd = detectCommand(text)
+  if (!cmd) return null
+  if (cmd.kind === 'show_watchlist') return 'watchlist'
+
+  const watch = parseSymbols(settings.tickers)
+  const q = parseQuestion(cmd.phrase, { watchlist: watch, zone: settings.zone })
+  const found = await resolveSymbol(q, settings.apiKey)
+  if (!found) return { header: 'WATCHLIST', body: `Couldn't tell which stock "${cmd.phrase}" is.` }
+  const sym = found.symbol
+
+  let next = watch
+  let msg: string
+  if (cmd.kind === 'add') {
+    if (watch.includes(sym)) msg = `${sym} is already on your watchlist.`
+    else if (watch.length >= 30) msg = 'Your watchlist is full (30 stocks).'
+    else {
+      next = [...watch, sym]
+      msg = `Added ${sym}${found.name ? ' (' + found.name + ')' : ''}.`
+    }
+  } else {
+    if (!watch.includes(sym)) msg = `${sym} isn't on your watchlist.`
+    else {
+      next = watch.filter(s => s !== sym)
+      msg = `Removed ${sym}.`
+    }
+  }
+  if (next !== watch) {
+    settings = { ...settings, tickers: next.join(', ') }
+    fillForm(settings)
+    await saveSettings(settings)
+    marketCheckedAt = 0
+    void refresh()
+  }
+  return { header: 'WATCHLIST', body: `${msg}\nNow watching: ${next.join(', ') || 'nothing'}` }
+}
+
 // Typed questions: same brain as the voice feature, handy for testing.
 async function askTyped() {
   const q = askInput.value.trim()
@@ -213,7 +252,12 @@ async function askTyped() {
   askButton.disabled = true
   askOut.innerHTML = '<p class="empty">Looking up…</p>'
   try {
-    const a = await answerQuestion(q, { apiKey: settings.apiKey, watchlist: parseSymbols(settings.tickers), zone: settings.zone })
+    const cmd = await runCommand(q)
+    if (cmd === 'watchlist') {
+      askOut.innerHTML = '<p class="empty">On the glasses this shows your live watchlist (see the preview above).</p>'
+      return
+    }
+    const a = cmd ?? (await answerQuestion(q, { apiKey: settings.apiKey, watchlist: parseSymbols(settings.tickers), zone: settings.zone }))
     const pages = [a.body, ...(a.more ?? [])]
     askOut.innerHTML =
       `<p class="answer-head">${escapeHtml(a.header.replace(/ {2}· swipe for (more|headlines)/, ''))}</p>` +
@@ -302,7 +346,7 @@ async function refresh(): Promise<void> {
 
 // ---------------------------------------------------------------- voice questions
 
-const EXAMPLES = 'e.g. "Apple price"  "Nvidia on March 3 at 2 PM"\n"market news"  "Tesla earnings"\n"what did the Fed do"  "how is the market"'
+const EXAMPLES = 'e.g. "show my watchlist"  "Apple price"\n"Nvidia on March 3 at 2 PM"\n"market news"  "Tesla earnings"\n"what did the Fed do"  "how is the market"'
 const MAX_LISTEN_MS = 15_000
 
 let voice: VoiceSession | null = null
@@ -414,9 +458,14 @@ async function stopListeningAndAnswer(problem?: string) {
     return
   }
 
-  await view?.showMessage(`"${text}"\n\nLooking up…`, 'ASK A QUESTION')
   try {
-    const a = await answerQuestion(text, {
+    const cmd = await runCommand(text)
+    if (cmd === 'watchlist') {
+      backToWatchlist()
+      return
+    }
+    if (!cmd) await view?.showMessage(`"${text}"\n\nLooking up…`, 'ASK A QUESTION')
+    const a = cmd ?? await answerQuestion(text, {
       apiKey: settings.apiKey,
       watchlist: parseSymbols(settings.tickers),
       zone: settings.zone,

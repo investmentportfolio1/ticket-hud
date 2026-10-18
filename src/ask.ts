@@ -309,8 +309,44 @@ export function zoneLabel(zone: string): string {
   return zone.split('/').pop()!.replace(/_/g, ' ')
 }
 
+/** The stock a question is about: spoken ticker, known name, or company search. */
+export async function resolveSymbol(
+  q: ParsedQuestion,
+  apiKey: string,
+): Promise<{ symbol: string; name: string } | null> {
+  if (q.symbol) return { symbol: q.symbol, name: '' }
+  if (!q.searchPhrase) return null
+  const hit = await searchSymbol(q.searchPhrase, apiKey).catch(() => null)
+  if (!hit) return null
+  // Only trust the search if the company name actually matches what was said.
+  const words = q.searchPhrase.split(' ').filter(w => w.length > 2)
+  const plausible =
+    hit.symbol.toLowerCase() === q.searchPhrase.replace(/\s/g, '') ||
+    words.some(w => hit.name.toLowerCase().includes(w))
+  return plausible ? hit : null
+}
+
+// ------------------------------------------------------------------ commands
+
+export type Command =
+  | { kind: 'show_watchlist' }
+  | { kind: 'add' | 'remove'; phrase: string }
+  | null
+
+/** Spoken commands that change what the app shows rather than asking a question. */
+export function detectCommand(text: string): Command {
+  const t = text.toLowerCase().replace(/[.,!?]/g, ' ').replace(/\s+/g, ' ').trim()
+  const list = '(?:my )?(?:watch ?list|list)'
+  let m: RegExpMatchArray | null
+  if ((m = t.match(new RegExp(`\\b(?:add|put|include)\\b (.+?) (?:to|on|in|into) ${list}\\b`)))) return { kind: 'add', phrase: m[1] }
+  if ((m = t.match(new RegExp(`\\b(?:remove|delete|drop|take)\\b (.+?) (?:from|off|out of) ${list}\\b`)))) return { kind: 'remove', phrase: m[1] }
+  if (/\bwatch ?list\b/.test(t) && !/\b(news|earnings?)\b/.test(t)) return { kind: 'show_watchlist' }
+  if (/^(go )?back$|^(show )?(my )?stocks$|^home$/.test(t)) return { kind: 'show_watchlist' }
+  return null
+}
+
 const HELP =
-  'Try: "Apple price", "Nvidia on March 3 at 2 PM",\n"market news", "Tesla earnings", "what did the Fed do",\n"how is the market", "earnings this week"'
+  'Try: "show my watchlist", "Apple price", "Nvidia on March 3 at 2 PM",\n"market news", "Tesla earnings", "what did the Fed do",\n"how is the market", "earnings this week"'
 
 export async function answerQuestion(
   text: string,
@@ -324,21 +360,9 @@ export async function answerQuestion(
   if (topic === 'fed') return fedNews(opts.apiKey, now)
   if (topic === 'market' && !q.symbol) return marketOverview(opts.apiKey, now)
 
-  let symbol = q.symbol
-  let name = ''
-  if (!symbol && q.searchPhrase) {
-    const hit = await searchSymbol(q.searchPhrase, opts.apiKey).catch(() => null)
-    // Only trust the search if the company name actually matches what was said.
-    const words = q.searchPhrase.split(' ').filter(w => w.length > 2)
-    const plausible =
-      hit &&
-      (hit.symbol.toLowerCase() === q.searchPhrase.replace(/\s/g, '') ||
-        words.some(w => hit.name.toLowerCase().includes(w)))
-    if (hit && plausible) {
-      symbol = hit.symbol
-      name = hit.name
-    }
-  }
+  const found = await resolveSymbol(q, opts.apiKey)
+  const symbol = found?.symbol ?? null
+  const name = found?.name ?? ''
   if (topic === 'news') return symbol ? companyNews(symbol, opts.apiKey, now) : marketNews(opts.apiKey, now)
   if (topic === 'earnings') {
     return symbol

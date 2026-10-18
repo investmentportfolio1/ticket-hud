@@ -30,10 +30,18 @@ jobs:
         run: npm run typecheck
         continue-on-error: true
       - run: npm run build
+      # Install file for the Even app (upload to hub.evenrealities.com → Builds).
+      - name: Package for Even Hub
+        id: pack
+        run: npx evenhub pack app.json dist -o ticker-hud.ehpk
+        continue-on-error: true
       - id: pages
         uses: actions/configure-pages@v5
       # QR code that the Even app scans to open the HUD.
       - run: npx --yes qrcode -w 600 -o dist/qr.png "${{ steps.pages.outputs.base_url }}/"
+      - name: Publish the install file next to the app
+        if: steps.pack.outcome == 'success'
+        run: cp ticker-hud.ehpk dist/ticker-hud.ehpk
       - uses: actions/upload-artifact@v4
         with:
           name: qr-code
